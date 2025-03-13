@@ -75,6 +75,7 @@ private:
     std::string lidar_frame_;
     std::string side_;
     float radius_;
+    float k_neighboors_normal_estimation_;
 };
 
 #endif  // LIVOX_TO_POINTCLOUD2_HPP

@@ -46,6 +46,8 @@ LivoxToPointCloud2::LivoxToPointCloud2() : Node("livox_to_pointcloud2")
 
     // filter robot ( alentours )
     this->declare_parameter<float>("radius_filetring_compared_to_livox", 1.0); //Default radius = 1m
+    this->declare_parameter<float>("k_neighboors_normal_estimation", 150.0); //Default radius = 1m
+
 
 
 
@@ -54,6 +56,7 @@ LivoxToPointCloud2::LivoxToPointCloud2() : Node("livox_to_pointcloud2")
     this->get_parameter("lidar_frame", lidar_frame_);
     this->get_parameter("radius_filetring_compared_to_livox", radius_);  // Default radius = 1m
     this->get_parameter("keep_side", side_);
+    this->get_parameter("k_neighboors_normal_estimation", k_neighboors_normal_estimation_);
 
 
 
@@ -168,7 +171,7 @@ void LivoxToPointCloud2::callback(const livox_ros_driver2::msg::CustomMsg::Share
     pcl::NormalEstimation<pcl::PointXYZI, pcl::Normal> normal_estimator;
     normal_estimator.setSearchMethod (tree);
     normal_estimator.setInputCloud (cloud_filtered_final);
-    normal_estimator.setKSearch(100); // performe ( k neighborhood)
+    normal_estimator.setKSearch(k_neighboors_normal_estimation_); // performe ( k neighborhood)
     normal_estimator.compute (*normals);
     pcl::IndicesPtr indices (new std::vector <int>);
     pcl::removeNaNFromPointCloud(*cloud_filtered_final, *indices);
