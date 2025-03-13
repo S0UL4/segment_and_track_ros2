@@ -70,12 +70,19 @@ private:
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr publisher_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr publisher_colored;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr inliers_publisher_;
+    pcl::PointCloud<pcl::PointXYZI>::Ptr extractPlanes(pcl::PointCloud<pcl::PointXYZI>::Ptr pc, pcl::PointIndices::Ptr inliers, pcl::ModelCoefficients::Ptr coefficients, float distanceThreshold, float angle, int maxIterations);
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr segment_side(pcl::PointCloud<pcl::PointXYZI>::Ptr pc_in, float k_neighboors);
     std::string lidar_topic_input_;
     std::string lidar_topic_output_;
     std::string lidar_frame_;
     std::string side_;
     float radius_;
     float k_neighboors_normal_estimation_;
+    bool use_ground_segmentation_; 
+    float ground_filter_distance_threshold_;
+    float ground_filter_max_iterations_;
+    float ground_filter_angle_threshold_;
+    bool inverse_z_;
 };
 
 #endif  // LIVOX_TO_POINTCLOUD2_HPP

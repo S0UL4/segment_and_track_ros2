@@ -45,9 +45,15 @@ LivoxToPointCloud2::LivoxToPointCloud2() : Node("livox_to_pointcloud2")
     this->declare_parameter<std::string>("keep_side", "all"); // defaults to "all"
 
     // filter robot ( alentours )
-    this->declare_parameter<float>("radius_filetring_compared_to_livox", 1.0); //Default radius = 1m
-    this->declare_parameter<float>("k_neighboors_normal_estimation", 150.0); //Default radius = 1m
+    this->declare_parameter<float>("radius_filetring_compared_to_livox", 0.5); //Default radius = 50 cm ( sphere of 50 cm)
+    this->declare_parameter<float>("k_neighboors_normal_estimation", 1.0); //Default radius Sphere = 1 m
 
+    // ground filtering ? maybe useful also 
+    this->declare_parameter<bool>("use_ground_segmentation",true);
+    this->declare_parameter<float>("ground_filter_distance_threshold", 0.10); //Default radius = 10 cm 
+    this->declare_parameter<float>("ground_filter_max_iterations", 1000.0); //Default to 1000
+    this->declare_parameter<float>("ground_filter_angle_threshold", 10.0);
+    this->declare_parameter<bool>("ground_filter_inverse_z", false);
 
 
 
@@ -58,6 +64,26 @@ LivoxToPointCloud2::LivoxToPointCloud2() : Node("livox_to_pointcloud2")
     this->get_parameter("keep_side", side_);
     this->get_parameter("k_neighboors_normal_estimation", k_neighboors_normal_estimation_);
 
+    // ground params
+    this->get_parameter("use_ground_segmentation", use_ground_segmentation_);
+    this->get_parameter("ground_filter_distance_threshold", ground_filter_distance_threshold_);
+    this->get_parameter("ground_filter_max_iterations", ground_filter_max_iterations_);
+    this->get_parameter("ground_filter_angle_threshold", ground_filter_angle_threshold_);
+    this->get_parameter("ground_filter_inverse_z", inverse_z_);
+
+
+    RCLCPP_INFO(this->get_logger(),"Node Init with : \n");
+    RCLCPP_INFO(this->get_logger()," lidar_topic_input : %s",lidar_topic_input_.c_str());
+    RCLCPP_INFO(this->get_logger()," lidar_topic_output : %s",lidar_topic_output_.c_str());
+    RCLCPP_INFO(this->get_logger()," lidar_frame : %s",lidar_frame_.c_str());
+    RCLCPP_INFO(this->get_logger()," radius_filetring_compared_to_livox : %f",radius_);
+    RCLCPP_INFO(this->get_logger()," Side to keep of pointcloud : %s",side_.c_str());
+    RCLCPP_INFO(this->get_logger()," k_neighboors_normal_estimation : %f",k_neighboors_normal_estimation_);
+    RCLCPP_INFO(this->get_logger()," use_ground_segmentation : %i",use_ground_segmentation_);
+    RCLCPP_INFO(this->get_logger()," ground_filter_distance_threshold : %f",ground_filter_distance_threshold_);
+    RCLCPP_INFO(this->get_logger()," ground_filter_max_iterations : %f",ground_filter_max_iterations_);
+    RCLCPP_INFO(this->get_logger()," ground_filter_angle_threshold : %f",ground_filter_angle_threshold_);
+    RCLCPP_INFO(this->get_logger(),"ground_filter_inverse_z : %i",inverse_z_);
 
 
     publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(lidar_topic_output_, 10);
@@ -160,60 +186,33 @@ void LivoxToPointCloud2::callback(const livox_ros_driver2::msg::CustomMsg::Share
     extract.setNegative (true);
     extract.filter(*cloud_filtered_final);
 
-    pcl::toROSMsg(*cloud_filtered_final,output_filtered);
-
-    publisher_->publish(output_filtered);
-
-
-    // Segmentation based on REGION GROWING algorithm 
-    pcl::search::Search<pcl::PointXYZI>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZI>);
-    pcl::PointCloud <pcl::Normal>::Ptr normals (new pcl::PointCloud <pcl::Normal>);
-    pcl::NormalEstimation<pcl::PointXYZI, pcl::Normal> normal_estimator;
-    normal_estimator.setSearchMethod (tree);
-    normal_estimator.setInputCloud (cloud_filtered_final);
-    normal_estimator.setKSearch(k_neighboors_normal_estimation_); // performe ( k neighborhood)
-    normal_estimator.compute (*normals);
-    pcl::IndicesPtr indices (new std::vector <int>);
-    pcl::removeNaNFromPointCloud(*cloud_filtered_final, *indices);
-
-    pcl::RegionGrowing<pcl::PointXYZI, pcl::Normal> reg;
-    reg.setMinClusterSize (50);
-    reg.setMaxClusterSize (1000000);
-    reg.setSearchMethod (tree);
-    reg.setNumberOfNeighbours (30);
-    reg.setInputCloud (cloud_filtered_final);
-    reg.setIndices (indices);
-    reg.setInputNormals (normals);
-    reg.setSmoothnessThreshold (3.0 / 180.0 * M_PI);
-    reg.setCurvatureThreshold (1.0);
-    std::vector <pcl::PointIndices> clusters;
-    reg.extract (clusters);
-    RCLCPP_INFO(this->get_logger(),"Number of clusters is equal to %i", clusters.size ());
-    RCLCPP_INFO(this->get_logger(),"First cluster has %i", clusters[0].indices.size () , " points." );
-    size_t counter = 0;
-    while(counter < clusters[0].indices.size ())
+    // Take points from the ground ( pour le moment estimation RANSAC , plan fit )
+    if(use_ground_segmentation_)
     {
-        RCLCPP_INFO(this->get_logger(),"%i",clusters[0].indices[counter]);
-        RCLCPP_INFO(this->get_logger(),", ");
-        counter++;
-        if(counter % 10 == 0 )
-        {
-            RCLCPP_INFO(this->get_logger()," .\n" );
-        }
+        pcl::ModelCoefficients::Ptr coefficients_ground(new pcl::ModelCoefficients);
+        pcl::PointIndices::Ptr Inliers_ground(new pcl::PointIndices);
+        pcl::PointCloud<pcl::PointXYZI>::Ptr pointClouds = extractPlanes(cloud_filtered_final, Inliers_ground, coefficients_ground, ground_filter_distance_threshold_, ground_filter_angle_threshold_, ground_filter_max_iterations_);
+    
+        cloud_filtered_final = pointClouds ;
     }
 
-    pcl::PointCloud <pcl::PointXYZRGB>::Ptr colored_cloud = reg.getColoredCloud ();
-    sensor_msgs::msg::PointCloud2 colored_cloud_ros;
+    // pcl::toROSMsg(*cloud_filtered_final,output_filtered);
 
+    // publisher_->publish(output_filtered);
+
+    // Segmentation based on REGION GROWING algorithm 
+    pcl::PointCloud <pcl::PointXYZRGB>::Ptr colored_cloud = segment_side(cloud_filtered_final,k_neighboors_normal_estimation_);
+    
+    // Publish Colored Cloud
+    sensor_msgs::msg::PointCloud2 colored_cloud_ros;
     pcl::toROSMsg(*colored_cloud,colored_cloud_ros);
     colored_cloud_ros.header = msg->header;
-
     colored_cloud_ros.header.frame_id = lidar_frame_;
     colored_cloud_ros.is_dense = true;
     publisher_colored->publish(colored_cloud_ros);
 
 
-    // Segmentation part using only RANSAC // bad choice
+    // Segmentation part using only RANSAC // bad choice ( i think, à re-étudier )
     // pcl::ModelCoefficients::Ptr coefficients (new pcl::ModelCoefficients);
     // pcl::PointIndices::Ptr inliers (new pcl::PointIndices);
     // // Create the segmentation object 
@@ -246,4 +245,98 @@ void LivoxToPointCloud2::callback(const livox_ros_driver2::msg::CustomMsg::Share
     // inliers_publisher_->publish(cloud_out); // publish only the inliers
     
 
+}
+
+
+pcl::PointCloud<pcl::PointXYZRGB>::Ptr LivoxToPointCloud2::segment_side(pcl::PointCloud<pcl::PointXYZI>::Ptr pc_in, float k_neighboors)
+{
+    // Segmentation based on REGION GROWING algorithm 
+    pcl::search::Search<pcl::PointXYZI>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZI>);
+    pcl::PointCloud <pcl::Normal>::Ptr normals (new pcl::PointCloud <pcl::Normal>);
+    pcl::NormalEstimationOMP<pcl::PointXYZI, pcl::Normal> normal_estimator; // maybe keep it one thread instead of NormalEstimationOMP ? ( i mean NormalEstimation )
+    normal_estimator.setSearchMethod (tree);
+    normal_estimator.setInputCloud (pc_in);
+    normal_estimator.setRadiusSearch(k_neighboors); // performe ( k neighborhood)
+    normal_estimator.compute (*normals);
+    pcl::IndicesPtr indices (new std::vector <int>);
+    pcl::removeNaNFromPointCloud(*pc_in, *indices);
+
+    pcl::RegionGrowing<pcl::PointXYZI, pcl::Normal> reg;
+    reg.setMinClusterSize (200);
+    reg.setMaxClusterSize (1000000);
+    reg.setSearchMethod (tree);
+    reg.setNumberOfNeighbours (30);
+    reg.setInputCloud (pc_in);
+    reg.setIndices (indices);
+    reg.setInputNormals (normals);
+    reg.setSmoothnessThreshold (45.0 / 180.0 * M_PI);
+    reg.setCurvatureThreshold (1.0);
+    std::vector <pcl::PointIndices> clusters;
+    reg.extract (clusters);
+    RCLCPP_INFO(this->get_logger(),"Number of clusters is equal to %i", clusters.size ());
+    RCLCPP_INFO(this->get_logger(),"First cluster has %i", clusters[0].indices.size () , " points." );
+    // size_t counter = 0;
+    // while(counter < clusters[0].indices.size ())
+    // {
+    //     RCLCPP_INFO(this->get_logger(),"%i",clusters[0].indices[counter]);
+    //     RCLCPP_INFO(this->get_logger(),", ");
+    //     counter++;
+    //     if(counter % 10 == 0 )
+    //     {
+    //         RCLCPP_INFO(this->get_logger()," .\n" );
+    //     }
+    // }
+
+    pcl::PointCloud <pcl::PointXYZRGB>::Ptr colored_cloud = reg.getColoredCloud();
+    return colored_cloud;
+}
+
+
+pcl::PointCloud<pcl::PointXYZI>::Ptr LivoxToPointCloud2::extractPlanes(pcl::PointCloud<pcl::PointXYZI>::Ptr pc, pcl::PointIndices::Ptr inliers, pcl::ModelCoefficients::Ptr coefficients, float distanceThreshold, float angle, int maxIterations)
+{
+    // Create the segmentation object
+    pcl::SACSegmentation<pcl::PointXYZI> seg;
+    // Optional
+    seg.setOptimizeCoefficients(true);
+    // Mandatory
+    seg.setModelType(pcl::SACMODEL_PERPENDICULAR_PLANE);
+    seg.setMaxIterations(maxIterations);
+    seg.setMethodType(pcl::SAC_RANSAC);
+    seg.setDistanceThreshold(distanceThreshold);
+
+    //because we want a specific plane (X-Y Plane) (In camera coordinates the ground plane is perpendicular to the y axis)
+    Eigen::Vector3f axis = Eigen::Vector3f(0.0, 0.0, 1.0); 
+    if(inverse_z_)
+        axis = Eigen::Vector3f(0.0, 0.0, - 1.0); //z axis
+    seg.setAxis(axis);
+    seg.setEpsAngle(angle * (M_PI / 180.0f)); // plane can be within angle degrees of X-Y plane
+
+    // Create pointcloud to publish inliers
+    pcl::ExtractIndices<pcl::PointXYZI> extract;
+
+    pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_plane(new pcl::PointCloud<pcl::PointXYZI>());
+    pcl::PointCloud<pcl::PointXYZI>::Ptr inversed_cloud_plane(new pcl::PointCloud<pcl::PointXYZI>());
+
+    // Fit a plane
+    seg.setInputCloud(pc);
+    seg.segment(*inliers, *coefficients);
+
+    // Check result
+    if (inliers->indices.size() == 0)
+    {
+        std::cout << "Could not estimate a planar model for the given dataset." << std::endl;
+        // break;
+    }
+
+    // Extract inliers
+    extract.setInputCloud(pc);
+    extract.setIndices(inliers);
+    extract.setNegative(false);
+    // Get the points associated with the planar surface
+    extract.filter(*cloud_plane);
+    // Let only the points that are not in the planar surface
+    extract.setNegative(true);
+    extract.filter(*inversed_cloud_plane);
+
+    return inversed_cloud_plane;
 }
