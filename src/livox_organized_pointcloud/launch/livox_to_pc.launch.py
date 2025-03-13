@@ -18,8 +18,8 @@ def generate_launch_description():
                 {"lidar_topic_input": "/livox/lidar"},
                 {"lidar_topic_output": "/livox/lidar_organized"},
                 {"lidar_frame": "livox_lidar_frame"},
-                 {"side": "left"},
-                 {"radius": 0.5}
+                 {"keep_side": "right"},
+                 {"radius_filetring_compared_to_livox": 0.5}
             ])
 
     return LaunchDescription([

@@ -22,6 +22,21 @@
 // to extract indices from pcl 
 #include <pcl/filters/extract_indices.h>
 
+// for segmentation purposes ( seg with ransac )
+#include <pcl/sample_consensus/method_types.h>
+#include <pcl/sample_consensus/model_types.h>
+#include <pcl/segmentation/sac_segmentation.h>
+#include <pcl/ModelCoefficients.h>
+#include <pcl/io/pcd_io.h>
+
+// seg with region growing
+#include <pcl/filters/filter_indices.h> // for pcl::removeNaNFromPointCloud
+#include <pcl/segmentation/region_growing.h>
+#include <pcl/features/normal_3d.h> // to calculate normals of points
+#include <pcl/search/kdtree.h> // search based on kdtree
+#include <pcl/search/search.h> // search lib of pcl
+#include <pcl/features/normal_3d_omp.h>
+
 #include <vector>
 
 namespace pcl
@@ -53,6 +68,8 @@ private:
     void callback(const livox_ros_driver2::msg::CustomMsg::SharedPtr msg);
     rclcpp::Subscription<livox_ros_driver2::msg::CustomMsg>::SharedPtr subscription_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr publisher_;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr publisher_colored;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr inliers_publisher_;
     std::string lidar_topic_input_;
     std::string lidar_topic_output_;
     std::string lidar_frame_;
