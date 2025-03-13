@@ -24,6 +24,7 @@ def generate_launch_description():
         DeclareLaunchArgument('ground_filter_max_iterations', default_value='1000.0', description='Ground filter max iterations (float)'),
         DeclareLaunchArgument('ground_filter_angle_threshold', default_value='10.0', description='Ground filter angle threshold (float)'),
         DeclareLaunchArgument('ground_filter_inverse_z', default_value='false', description='Ground filter inverse Z (bool)'),
+        DeclareLaunchArgument('side_segementation_smoothnessThreshold', default_value='45.0', description='If the deviation between points normals is less than the smoothness threshold then they are suggested to be in the same cluster ( !! en degrees )( float )'),
 
         # Node execution (example, modify for your use case)
         Node(
@@ -43,7 +44,8 @@ def generate_launch_description():
                 'ground_filter_distance_threshold': LaunchConfiguration('ground_filter_distance_threshold'),
                 'ground_filter_max_iterations': LaunchConfiguration('ground_filter_max_iterations'),
                 'ground_filter_angle_threshold': LaunchConfiguration('ground_filter_angle_threshold'),
-                'ground_filter_inverse_z': LaunchConfiguration('ground_filter_inverse_z')
+                'ground_filter_inverse_z': LaunchConfiguration('ground_filter_inverse_z'),
+                'side_segementation_smoothnessThreshold': LaunchConfiguration('side_segementation_smoothnessThreshold')
             }]
         )
     ])

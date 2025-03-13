@@ -55,6 +55,9 @@ LivoxToPointCloud2::LivoxToPointCloud2() : Node("livox_to_pointcloud2")
     this->declare_parameter<float>("ground_filter_angle_threshold", 10.0);
     this->declare_parameter<bool>("ground_filter_inverse_z", false);
 
+    // side segmentation
+    this->declare_parameter<float>("side_segementation_smoothnessThreshold", 45.0);  // en degrees
+
 
 
     this->get_parameter("lidar_topic_input", lidar_topic_input_);
@@ -70,6 +73,7 @@ LivoxToPointCloud2::LivoxToPointCloud2() : Node("livox_to_pointcloud2")
     this->get_parameter("ground_filter_max_iterations", ground_filter_max_iterations_);
     this->get_parameter("ground_filter_angle_threshold", ground_filter_angle_threshold_);
     this->get_parameter("ground_filter_inverse_z", inverse_z_);
+    this->get_parameter("side_segementation_smoothnessThreshold", side_segementation_smoothnessThreshold_);
 
 
     RCLCPP_INFO(this->get_logger(),"Node Init with : \n");
@@ -84,6 +88,7 @@ LivoxToPointCloud2::LivoxToPointCloud2() : Node("livox_to_pointcloud2")
     RCLCPP_INFO(this->get_logger()," ground_filter_max_iterations : %f",ground_filter_max_iterations_);
     RCLCPP_INFO(this->get_logger()," ground_filter_angle_threshold : %f",ground_filter_angle_threshold_);
     RCLCPP_INFO(this->get_logger(),"ground_filter_inverse_z : %i",inverse_z_);
+    RCLCPP_INFO(this->get_logger(),"side_segementation_smoothnessThreshold : %f",side_segementation_smoothnessThreshold_);
 
 
     publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(lidar_topic_output_, 10);
@@ -269,7 +274,7 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr LivoxToPointCloud2::segment_side(pcl::Poi
     reg.setInputCloud (pc_in);
     reg.setIndices (indices);
     reg.setInputNormals (normals);
-    reg.setSmoothnessThreshold (45.0 / 180.0 * M_PI);
+    reg.setSmoothnessThreshold (side_segementation_smoothnessThreshold_ / 180.0 * M_PI);
     reg.setCurvatureThreshold (1.0);
     std::vector <pcl::PointIndices> clusters;
     reg.extract (clusters);

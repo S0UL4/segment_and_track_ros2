@@ -83,6 +83,7 @@ private:
     float ground_filter_max_iterations_;
     float ground_filter_angle_threshold_;
     bool inverse_z_;
+    float side_segementation_smoothnessThreshold_;
 };
 
 #endif  // LIVOX_TO_POINTCLOUD2_HPP
