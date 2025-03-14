@@ -13,14 +13,15 @@ cur_path = os.path.split(os.path.realpath(__file__))[0] + '/'
 def generate_launch_description():
     return LaunchDescription([
         # Declare launch arguments
+        DeclareLaunchArgument('lidar_selected', default_value='0', description='Lidar Type , 0 : Livox , other : Standard Pointcloud2'),
         DeclareLaunchArgument('lidar_topic_input', default_value='/livox/lidar', description='Lidar input topic'),
         DeclareLaunchArgument('lidar_topic_output', default_value='/livox/lidar_organized', description='Lidar output topic'),
-        DeclareLaunchArgument('lidar_frame', default_value='livox_lidar_frame', description='Lidar frame'),
-        DeclareLaunchArgument('keep_side', default_value='right', description='Side to keep in lidar processing'),
+        DeclareLaunchArgument('lidar_frame', default_value='lidar', description='Lidar frame'),
+        DeclareLaunchArgument('keep_side', default_value='left', description='Side to keep in lidar processing'),
         DeclareLaunchArgument('radius_filetring_compared_to_livox', default_value='0.5', description='Radius from lidar origin (float)'),
         DeclareLaunchArgument('k_neighboors_normal_estimation', default_value='1.5', description='K-neighbors for normal estimation (float)'),
         DeclareLaunchArgument('use_ground_segmentation', default_value='true', description='Enable ground segmentation (bool)'),
-        DeclareLaunchArgument('ground_filter_distance_threshold', default_value='0.10', description='Ground filter distance threshold (float)'),
+        DeclareLaunchArgument('ground_filter_distance_threshold', default_value='0.50', description='Ground filter distance threshold (float)'),
         DeclareLaunchArgument('ground_filter_max_iterations', default_value='1000.0', description='Ground filter max iterations (float)'),
         DeclareLaunchArgument('ground_filter_angle_threshold', default_value='10.0', description='Ground filter angle threshold (float)'),
         DeclareLaunchArgument('ground_filter_inverse_z', default_value='false', description='Ground filter inverse Z (bool)'),
@@ -45,7 +46,8 @@ def generate_launch_description():
                 'ground_filter_max_iterations': LaunchConfiguration('ground_filter_max_iterations'),
                 'ground_filter_angle_threshold': LaunchConfiguration('ground_filter_angle_threshold'),
                 'ground_filter_inverse_z': LaunchConfiguration('ground_filter_inverse_z'),
-                'side_segementation_smoothnessThreshold': LaunchConfiguration('side_segementation_smoothnessThreshold')
+                'side_segementation_smoothnessThreshold': LaunchConfiguration('side_segementation_smoothnessThreshold'),
+                'lidar_selected': LaunchConfiguration('lidar_selected')
             }]
         )
     ])

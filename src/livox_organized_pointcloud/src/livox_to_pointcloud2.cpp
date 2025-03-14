@@ -58,7 +58,8 @@ LivoxToPointCloud2::LivoxToPointCloud2() : Node("livox_to_pointcloud2")
     // side segmentation
     this->declare_parameter<float>("side_segementation_smoothnessThreshold", 45.0);  // en degrees
 
-
+    // selected lidar 
+    this->declare_parameter<int>("lidar_selected",0); // 0 : Livox , 1 : Standard Pointcloud
 
     this->get_parameter("lidar_topic_input", lidar_topic_input_);
     this->get_parameter("lidar_topic_output", lidar_topic_output_);
@@ -74,9 +75,11 @@ LivoxToPointCloud2::LivoxToPointCloud2() : Node("livox_to_pointcloud2")
     this->get_parameter("ground_filter_angle_threshold", ground_filter_angle_threshold_);
     this->get_parameter("ground_filter_inverse_z", inverse_z_);
     this->get_parameter("side_segementation_smoothnessThreshold", side_segementation_smoothnessThreshold_);
+    this->get_parameter("lidar_selected", lidar_selected_);
 
 
     RCLCPP_INFO(this->get_logger(),"Node Init with : \n");
+    RCLCPP_INFO(this->get_logger()," lidar_selected : %i",lidar_selected_);
     RCLCPP_INFO(this->get_logger()," lidar_topic_input : %s",lidar_topic_input_.c_str());
     RCLCPP_INFO(this->get_logger()," lidar_topic_output : %s",lidar_topic_output_.c_str());
     RCLCPP_INFO(this->get_logger()," lidar_frame : %s",lidar_frame_.c_str());
@@ -94,10 +97,139 @@ LivoxToPointCloud2::LivoxToPointCloud2() : Node("livox_to_pointcloud2")
     publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(lidar_topic_output_, 10);
     inliers_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/segmented",10);
     publisher_colored = this->create_publisher<sensor_msgs::msg::PointCloud2>("/colored_point_cloud",10);
-    subscription_ = this->create_subscription<livox_ros_driver2::msg::CustomMsg>(lidar_topic_input_, 10, std::bind(&LivoxToPointCloud2::callback, this, std::placeholders::_1));
+
+    if(lidar_selected_ == 0)
+        subscription_ = this->create_subscription<livox_ros_driver2::msg::CustomMsg>(lidar_topic_input_, 10, std::bind(&LivoxToPointCloud2::callback_livox, this, std::placeholders::_1));
+    else 
+        subscription_pc = this->create_subscription<sensor_msgs::msg::PointCloud2>(lidar_topic_input_, 10, std::bind(&LivoxToPointCloud2::callback_pc, this, std::placeholders::_1));
+  
+    }
+
+
+void LivoxToPointCloud2::upsampling(pcl::PointCloud<pcl::PointXYZI>::Ptr& input_cloud,
+        pcl::PointCloud<pcl::PointXYZI>::Ptr& output_cloud) {
+        double search_radius = 0.01;
+        double sampling_radius = 0.001;
+        double step_size =0.001;
+        double gauss_param = (double)std::pow(search_radius, 2);
+        int pol_order = 2;
+        unsigned int num_threats = 1;
+
+        // https://pointclouds.org/documentation/classpcl_1_1_moving_least_squares.html
+        // check alternative https://pointclouds.org/documentation/classpcl_1_1_bilateral_upsampling.html
+        pcl::PointCloud<pcl::PointXYZI>::Ptr dense_points(new pcl::PointCloud<pcl::PointXYZI>());
+        pcl::search::KdTree<pcl::PointXYZI>::Ptr kd_tree(new pcl::search::KdTree<pcl::PointXYZI>);
+        pcl::MovingLeastSquares<pcl::PointXYZI, pcl::PointXYZI> mls;
+
+        mls.setComputeNormals(true);
+        mls.setInputCloud(input_cloud);
+        mls.setSearchMethod(kd_tree);
+        mls.setSearchRadius(search_radius);
+        mls.setUpsamplingMethod(
+        pcl::MovingLeastSquares<pcl::PointXYZI, pcl::PointXYZI>::UpsamplingMethod::SAMPLE_LOCAL_PLANE);
+        mls.setUpsamplingRadius(sampling_radius);
+        mls.setUpsamplingStepSize(step_size);
+        mls.setPolynomialOrder(pol_order);
+        mls.setSqrGaussParam(gauss_param);  // (the square of the search radius works best in general)
+        mls.setCacheMLSResults(true);       // Set whether the mls results should be stored for each point in the input cloud.
+        mls.setNumberOfThreads(num_threats);
+        // mls.setDilationVoxelSize();//Used only in the VOXEL_GRID_DILATION upsampling method
+        // mls.setPointDensity(15); //15
+        mls.process(*dense_points);
+
+        *output_cloud = *input_cloud;
+        *output_cloud += *dense_points;
+
+        if (output_cloud->points.size() == input_cloud->points.size()) {
+            return;
+        //pcl::console::print_warn("\ninput cloud could not be upsampled, change input parameters!");
+        }
+
+        RCLCPP_INFO(this->get_logger(),"New points %d ",dense_points->points.size());
+        RCLCPP_INFO(this->get_logger(),"Output cloud points %d ",output_cloud->points.size());
 }
 
-void LivoxToPointCloud2::callback(const livox_ros_driver2::msg::CustomMsg::SharedPtr msg)
+
+void LivoxToPointCloud2::callback_pc(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
+{
+    pcl::PointCloud<pcl::PointXYZI>::Ptr pcl_cloud(new pcl::PointCloud<pcl::PointXYZI>());
+    pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_filtered (new pcl::PointCloud<pcl::PointXYZI>); // only on Y
+    pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_filtered_final (new pcl::PointCloud<pcl::PointXYZI>); // Y and X
+
+    sensor_msgs::msg::PointCloud2 output_filtered; 
+    pcl::fromROSMsg(*msg, *pcl_cloud);
+    // filter on Y
+    pcl::PassThrough<pcl::PointXYZI> pass_y;
+    pass_y.setInputCloud(pcl_cloud);
+    pass_y.setFilterFieldName("y");
+    if(!side_.compare("right")) // if its RIGHT
+        pass_y.setFilterLimits(- std::numeric_limits<float>::max(), 0);   // only negatif values 
+    else if(!side_.compare("left"))
+        pass_y.setFilterLimits(0, std::numeric_limits<float>::max());  // only pos values
+    else 
+        pass_y.setFilterLimits(- std::numeric_limits<float>::max(), std::numeric_limits<float>::max());  // only pos values
+  
+    pass_y.filter(*cloud_filtered);
+
+     // filter on radius
+    pcl::KdTreeFLANN<pcl::PointXYZI> kdtree;
+    kdtree.setInputCloud(cloud_filtered);
+    // search per rapport to origin
+    pcl::PointXYZI searchPoint;
+    searchPoint.x = 0.0;
+    searchPoint.y = 0.0;
+    searchPoint.z = 0.0;
+
+    std::vector<int> pointIdxRadiusSearch;
+    std::vector<float> pointRadiusSquaredDistance;
+
+    kdtree.radiusSearch(searchPoint,radius_,pointIdxRadiusSearch,pointRadiusSquaredDistance);
+
+    pcl::ExtractIndices<pcl::PointXYZI> extract;
+    
+    extract.setInputCloud(cloud_filtered);
+
+    pcl::PointIndices::Ptr remove_indices(new pcl::PointIndices);
+    remove_indices->indices = pointIdxRadiusSearch ;
+    extract.setIndices(remove_indices);
+    extract.setNegative (true);
+    extract.filter(*cloud_filtered_final);
+
+    // Take points from the ground ( pour le moment estimation RANSAC , plan fit )
+    if(use_ground_segmentation_)
+    {
+        pcl::ModelCoefficients::Ptr coefficients_ground(new pcl::ModelCoefficients);
+        pcl::PointIndices::Ptr Inliers_ground(new pcl::PointIndices);
+        pcl::PointCloud<pcl::PointXYZI>::Ptr pointClouds = extractPlanes(cloud_filtered_final, Inliers_ground, coefficients_ground, ground_filter_distance_threshold_, ground_filter_angle_threshold_, ground_filter_max_iterations_);
+    
+        cloud_filtered_final = pointClouds ;
+    }
+
+    // upsampling maybe ??? 
+    pcl::PointCloud<pcl::PointXYZI>::Ptr up_sample_filtered(new pcl::PointCloud<pcl::PointXYZI>());
+
+    upsampling(cloud_filtered_final,up_sample_filtered);
+    pcl::toROSMsg(*up_sample_filtered,output_filtered);
+    output_filtered.header = msg->header;
+    output_filtered.header.frame_id = lidar_frame_;
+    output_filtered.is_dense = true;
+    publisher_->publish(output_filtered);
+
+    // Segmentation based on REGION GROWING algorithm 
+    pcl::PointCloud <pcl::PointXYZRGB>::Ptr colored_cloud = segment_side(cloud_filtered_final,k_neighboors_normal_estimation_);
+    
+    // Publish Colored Cloud
+    sensor_msgs::msg::PointCloud2 colored_cloud_ros;
+    pcl::toROSMsg(*colored_cloud,colored_cloud_ros);
+    colored_cloud_ros.header = msg->header;
+    colored_cloud_ros.header.frame_id = lidar_frame_;
+    colored_cloud_ros.is_dense = false;
+    publisher_colored->publish(colored_cloud_ros);
+
+}
+
+
+void LivoxToPointCloud2::callback_livox(const livox_ros_driver2::msg::CustomMsg::SharedPtr msg)
 {
     // if(msg->point_num < min_points_) return;
     
@@ -146,7 +278,7 @@ void LivoxToPointCloud2::callback(const livox_ros_driver2::msg::CustomMsg::Share
     output.width = msg->point_num;
     output.height = 1;
     output.is_bigendian = false;
-    output.is_dense = true;
+    output.is_dense = false;
 
     pcl::PointCloud<pcl::PointXYZI>::Ptr pcl_cloud(new pcl::PointCloud<pcl::PointXYZI>());
     pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_filtered (new pcl::PointCloud<pcl::PointXYZI>); // only on Y
@@ -201,12 +333,20 @@ void LivoxToPointCloud2::callback(const livox_ros_driver2::msg::CustomMsg::Share
         cloud_filtered_final = pointClouds ;
     }
 
-    // pcl::toROSMsg(*cloud_filtered_final,output_filtered);
 
-    // publisher_->publish(output_filtered);
+    // upsampling maybe ??? 
+    pcl::PointCloud<pcl::PointXYZI>::Ptr up_sample_filtered(new pcl::PointCloud<pcl::PointXYZI>());
+
+    upsampling(cloud_filtered_final,up_sample_filtered);
+    pcl::toROSMsg(*up_sample_filtered,output_filtered);
+    output_filtered.header = msg->header;
+    output_filtered.header.frame_id = lidar_frame_;
+    output_filtered.is_dense = true;
+    publisher_->publish(output_filtered);
+
 
     // Segmentation based on REGION GROWING algorithm 
-    pcl::PointCloud <pcl::PointXYZRGB>::Ptr colored_cloud = segment_side(cloud_filtered_final,k_neighboors_normal_estimation_);
+    pcl::PointCloud <pcl::PointXYZRGB>::Ptr colored_cloud = segment_side(up_sample_filtered,k_neighboors_normal_estimation_);
     
     // Publish Colored Cloud
     sensor_msgs::msg::PointCloud2 colored_cloud_ros;
@@ -216,46 +356,13 @@ void LivoxToPointCloud2::callback(const livox_ros_driver2::msg::CustomMsg::Share
     colored_cloud_ros.is_dense = true;
     publisher_colored->publish(colored_cloud_ros);
 
-
-    // Segmentation part using only RANSAC // bad choice ( i think, à re-étudier )
-    // pcl::ModelCoefficients::Ptr coefficients (new pcl::ModelCoefficients);
-    // pcl::PointIndices::Ptr inliers (new pcl::PointIndices);
-    // // Create the segmentation object 
-    // pcl::SACSegmentation<pcl::PointXYZI> segmenter;
-    // segmenter.setOptimizeCoefficients(false);
-    // segmenter.setModelType(pcl::SACMODEL_PLANE);
-    // segmenter.setMethodType(pcl::SAC_RANSAC);
-    // segmenter.setDistanceThreshold(0.01);
-
-    // segmenter.setInputCloud(cloud_filtered_final);
-    // segmenter.segment (*inliers, *coefficients);
-
-    // if(inliers->indices.size () == 0)
-    // return;
-
-    // pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_inliers(new pcl::PointCloud<pcl::PointXYZI>);
-    // for(const auto &idx_segmented: inliers->indices)
-    // {
-        
-    //     cloud_inliers->points.push_back(cloud_filtered_final->points[idx_segmented]);
-    // }
-    // sensor_msgs::msg::PointCloud2 cloud_out;
-
-    // pcl::toROSMsg(*cloud_inliers,cloud_out);
-    
-    // cloud_out.header = msg->header;
-    // cloud_out.header.frame_id=lidar_frame_;
-
-    
-    // inliers_publisher_->publish(cloud_out); // publish only the inliers
-    
-
 }
 
 
 pcl::PointCloud<pcl::PointXYZRGB>::Ptr LivoxToPointCloud2::segment_side(pcl::PointCloud<pcl::PointXYZI>::Ptr pc_in, float k_neighboors)
 {
     // Segmentation based on REGION GROWING algorithm 
+
     pcl::search::Search<pcl::PointXYZI>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZI>);
     pcl::PointCloud <pcl::Normal>::Ptr normals (new pcl::PointCloud <pcl::Normal>);
     pcl::NormalEstimationOMP<pcl::PointXYZI, pcl::Normal> normal_estimator; // maybe keep it one thread instead of NormalEstimationOMP ? ( i mean NormalEstimation )
@@ -280,19 +387,10 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr LivoxToPointCloud2::segment_side(pcl::Poi
     reg.extract (clusters);
     RCLCPP_INFO(this->get_logger(),"Number of clusters is equal to %i", clusters.size ());
     RCLCPP_INFO(this->get_logger(),"First cluster has %i", clusters[0].indices.size () , " points." );
-    // size_t counter = 0;
-    // while(counter < clusters[0].indices.size ())
-    // {
-    //     RCLCPP_INFO(this->get_logger(),"%i",clusters[0].indices[counter]);
-    //     RCLCPP_INFO(this->get_logger(),", ");
-    //     counter++;
-    //     if(counter % 10 == 0 )
-    //     {
-    //         RCLCPP_INFO(this->get_logger()," .\n" );
-    //     }
-    // }
 
     pcl::PointCloud <pcl::PointXYZRGB>::Ptr colored_cloud = reg.getColoredCloud();
+
+
     return colored_cloud;
 }
 

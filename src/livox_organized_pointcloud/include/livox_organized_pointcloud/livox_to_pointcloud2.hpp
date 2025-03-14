@@ -37,6 +37,11 @@
 #include <pcl/search/search.h> // search lib of pcl
 #include <pcl/features/normal_3d_omp.h>
 
+
+// upsampling maybe ? 
+#include <pcl/surface/mls.h>
+
+
 #include <vector>
 
 namespace pcl
@@ -65,8 +70,13 @@ public:
 
 
 private:
-    void callback(const livox_ros_driver2::msg::CustomMsg::SharedPtr msg);
+    void callback_livox(const livox_ros_driver2::msg::CustomMsg::SharedPtr msg);
+    void callback_pc(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
+    void upsampling(pcl::PointCloud<pcl::PointXYZI>::Ptr& input_cloud,
+        pcl::PointCloud<pcl::PointXYZI>::Ptr& output_cloud);
+
     rclcpp::Subscription<livox_ros_driver2::msg::CustomMsg>::SharedPtr subscription_;
+    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr subscription_pc;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr publisher_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr publisher_colored;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr inliers_publisher_;
@@ -76,6 +86,7 @@ private:
     std::string lidar_topic_output_;
     std::string lidar_frame_;
     std::string side_;
+    int lidar_selected_;
     float radius_;
     float k_neighboors_normal_estimation_;
     bool use_ground_segmentation_; 
