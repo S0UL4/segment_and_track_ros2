@@ -40,9 +40,14 @@
 
 // upsampling maybe ? 
 #include <pcl/surface/mls.h>
-
+#include <Eigen/Dense>
 
 #include <vector>
+
+
+// visusalization 
+#include <visualization_msgs/msg/marker_array.hpp>
+#include <geometry_msgs/msg/point.hpp>
 
 namespace pcl
 {
@@ -74,7 +79,8 @@ private:
     void callback_pc(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
     void upsampling(pcl::PointCloud<pcl::PointXYZI>::Ptr& input_cloud,
         pcl::PointCloud<pcl::PointXYZI>::Ptr& output_cloud);
-
+    
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr centroid_marker_pub_;
     rclcpp::Subscription<livox_ros_driver2::msg::CustomMsg>::SharedPtr subscription_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr subscription_pc;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr publisher_;
@@ -95,6 +101,9 @@ private:
     float ground_filter_angle_threshold_;
     bool inverse_z_;
     float side_segementation_smoothnessThreshold_;
+    float y_side_filter;
+    float x_side_min_filter;
+    float x_side_max_filter;
 };
 
 #endif  // LIVOX_TO_POINTCLOUD2_HPP

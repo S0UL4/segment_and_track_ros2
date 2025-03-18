@@ -55,6 +55,16 @@ LivoxToPointCloud2::LivoxToPointCloud2() : Node("livox_to_pointcloud2")
     this->declare_parameter<float>("ground_filter_angle_threshold", 10.0);
     this->declare_parameter<bool>("ground_filter_inverse_z", false);
 
+    // Y filter 
+    this->declare_parameter<float>("y_side_filter", 10.0);
+
+    // X min and max filter ( pour que le robot voit a x_min devant )
+    this->declare_parameter<float>("x_side_min_filter", 2.0);
+    this->declare_parameter<float>("x_side_max_filter", 20.0);
+
+
+
+
     // side segmentation
     this->declare_parameter<float>("side_segementation_smoothnessThreshold", 45.0);  // en degrees
 
@@ -67,6 +77,11 @@ LivoxToPointCloud2::LivoxToPointCloud2() : Node("livox_to_pointcloud2")
     this->get_parameter("radius_filetring_compared_to_livox", radius_);  // Default radius = 1m
     this->get_parameter("keep_side", side_);
     this->get_parameter("k_neighboors_normal_estimation", k_neighboors_normal_estimation_);
+
+    this->get_parameter("y_side_filter",y_side_filter);
+    this->get_parameter("x_side_min_filter",x_side_min_filter);
+    this->get_parameter("x_side_max_filter",x_side_max_filter);
+
 
     // ground params
     this->get_parameter("use_ground_segmentation", use_ground_segmentation_);
@@ -92,11 +107,15 @@ LivoxToPointCloud2::LivoxToPointCloud2() : Node("livox_to_pointcloud2")
     RCLCPP_INFO(this->get_logger()," ground_filter_angle_threshold : %f",ground_filter_angle_threshold_);
     RCLCPP_INFO(this->get_logger(),"ground_filter_inverse_z : %i",inverse_z_);
     RCLCPP_INFO(this->get_logger(),"side_segementation_smoothnessThreshold : %f",side_segementation_smoothnessThreshold_);
+    RCLCPP_INFO(this->get_logger(),"y_side_filter : %f",y_side_filter);
+    RCLCPP_INFO(this->get_logger(),"x_side_min_filter : %f",x_side_min_filter);
+    RCLCPP_INFO(this->get_logger(),"x_side_max_filter : %f",x_side_max_filter);
 
 
     publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(lidar_topic_output_, 10);
     inliers_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/segmented",10);
     publisher_colored = this->create_publisher<sensor_msgs::msg::PointCloud2>("/colored_point_cloud",10);
+    centroid_marker_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("centroid_markers", 10);
 
     if(lidar_selected_ == 0)
         subscription_ = this->create_subscription<livox_ros_driver2::msg::CustomMsg>(lidar_topic_input_, 10, std::bind(&LivoxToPointCloud2::callback_livox, this, std::placeholders::_1));
@@ -152,6 +171,7 @@ void LivoxToPointCloud2::upsampling(pcl::PointCloud<pcl::PointXYZI>::Ptr& input_
 
 void LivoxToPointCloud2::callback_pc(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
+    if(msg->data.size() == 0) return;
     pcl::PointCloud<pcl::PointXYZI>::Ptr pcl_cloud(new pcl::PointCloud<pcl::PointXYZI>());
     pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_filtered (new pcl::PointCloud<pcl::PointXYZI>); // only on Y
     pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_filtered_final (new pcl::PointCloud<pcl::PointXYZI>); // Y and X
@@ -160,17 +180,24 @@ void LivoxToPointCloud2::callback_pc(const sensor_msgs::msg::PointCloud2::Shared
     pcl::fromROSMsg(*msg, *pcl_cloud);
     // filter on Y
     pcl::PassThrough<pcl::PointXYZI> pass_y;
+    pcl::PassThrough<pcl::PointXYZI> pass_x;
     pass_y.setInputCloud(pcl_cloud);
     pass_y.setFilterFieldName("y");
     if(!side_.compare("right")) // if its RIGHT
-        pass_y.setFilterLimits(- std::numeric_limits<float>::max(), 0);   // only negatif values 
+        pass_y.setFilterLimits(- y_side_filter , 0);   // only negatif values 
     else if(!side_.compare("left"))
-        pass_y.setFilterLimits(0, std::numeric_limits<float>::max());  // only pos values
+        pass_y.setFilterLimits(0, y_side_filter);  // only pos values
     else 
-        pass_y.setFilterLimits(- std::numeric_limits<float>::max(), std::numeric_limits<float>::max());  // only pos values
+        pass_y.setFilterLimits(- y_side_filter, y_side_filter);  // only pos values
   
     pass_y.filter(*cloud_filtered);
 
+    pass_x.setInputCloud(cloud_filtered);
+    pass_x.setFilterFieldName("x");
+    pass_x.setFilterLimits(x_side_min_filter,x_side_max_filter);
+    pass_x.filter(*cloud_filtered);
+
+    if(cloud_filtered->size() == 0 ) return;
      // filter on radius
     pcl::KdTreeFLANN<pcl::PointXYZI> kdtree;
     kdtree.setInputCloud(cloud_filtered);
@@ -218,6 +245,7 @@ void LivoxToPointCloud2::callback_pc(const sensor_msgs::msg::PointCloud2::Shared
     // Segmentation based on REGION GROWING algorithm 
     pcl::PointCloud <pcl::PointXYZRGB>::Ptr colored_cloud = segment_side(cloud_filtered_final,k_neighboors_normal_estimation_);
     
+    if(colored_cloud->size() == 0 ) return;
     // Publish Colored Cloud
     sensor_msgs::msg::PointCloud2 colored_cloud_ros;
     pcl::toROSMsg(*colored_cloud,colored_cloud_ros);
@@ -231,7 +259,7 @@ void LivoxToPointCloud2::callback_pc(const sensor_msgs::msg::PointCloud2::Shared
 
 void LivoxToPointCloud2::callback_livox(const livox_ros_driver2::msg::CustomMsg::SharedPtr msg)
 {
-    // if(msg->point_num < min_points_) return;
+    if(msg->point_num < 50 ) return;
     
     sensor_msgs::msg::PointCloud2 output;
     
@@ -282,23 +310,31 @@ void LivoxToPointCloud2::callback_livox(const livox_ros_driver2::msg::CustomMsg:
 
     pcl::PointCloud<pcl::PointXYZI>::Ptr pcl_cloud(new pcl::PointCloud<pcl::PointXYZI>());
     pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_filtered (new pcl::PointCloud<pcl::PointXYZI>); // only on Y
+    pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_filtered_x (new pcl::PointCloud<pcl::PointXYZI>);
     pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_filtered_final (new pcl::PointCloud<pcl::PointXYZI>); // Y and X
 
     sensor_msgs::msg::PointCloud2 output_filtered; 
     pcl::fromROSMsg(output, *pcl_cloud);
     // filter on Y
     pcl::PassThrough<pcl::PointXYZI> pass_y;
+    pcl::PassThrough<pcl::PointXYZI> pass_x;
     pass_y.setInputCloud(pcl_cloud);
     pass_y.setFilterFieldName("y");
     if(!side_.compare("right")) // if its RIGHT
-        pass_y.setFilterLimits(- std::numeric_limits<float>::max(), 0);   // only negatif values 
+        pass_y.setFilterLimits(- y_side_filter , 0);   // only negatif values 
     else if(!side_.compare("left"))
-        pass_y.setFilterLimits(0, std::numeric_limits<float>::max());  // only pos values
+        pass_y.setFilterLimits(0, y_side_filter);  // only pos values
     else 
-        pass_y.setFilterLimits(- std::numeric_limits<float>::max(), std::numeric_limits<float>::max());  // only pos values
+        pass_y.setFilterLimits(- y_side_filter, y_side_filter);  // only pos values
   
     pass_y.filter(*cloud_filtered);
 
+    pass_x.setInputCloud(cloud_filtered);
+    pass_x.setFilterFieldName("x");
+    pass_x.setFilterLimits(x_side_min_filter,x_side_max_filter);
+    pass_x.filter(*cloud_filtered);
+
+    if(cloud_filtered->size() == 0 ) return;
      // filter on radius
     pcl::KdTreeFLANN<pcl::PointXYZI> kdtree;
     kdtree.setInputCloud(cloud_filtered);
@@ -348,6 +384,7 @@ void LivoxToPointCloud2::callback_livox(const livox_ros_driver2::msg::CustomMsg:
     // Segmentation based on REGION GROWING algorithm 
     pcl::PointCloud <pcl::PointXYZRGB>::Ptr colored_cloud = segment_side(up_sample_filtered,k_neighboors_normal_estimation_);
     
+    if(colored_cloud->size() == 0 ) return;
     // Publish Colored Cloud
     sensor_msgs::msg::PointCloud2 colored_cloud_ros;
     pcl::toROSMsg(*colored_cloud,colored_cloud_ros);
@@ -377,21 +414,111 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr LivoxToPointCloud2::segment_side(pcl::Poi
     reg.setMinClusterSize (200);
     reg.setMaxClusterSize (1000000);
     reg.setSearchMethod (tree);
-    reg.setNumberOfNeighbours (30);
+    reg.setNumberOfNeighbours (100);
     reg.setInputCloud (pc_in);
     reg.setIndices (indices);
     reg.setInputNormals (normals);
     reg.setSmoothnessThreshold (side_segementation_smoothnessThreshold_ / 180.0 * M_PI);
-    reg.setCurvatureThreshold (1.0);
+    reg.setCurvatureThreshold (3.0);
     std::vector <pcl::PointIndices> clusters;
     reg.extract (clusters);
-    RCLCPP_INFO(this->get_logger(),"Number of clusters is equal to %i", clusters.size ());
-    RCLCPP_INFO(this->get_logger(),"First cluster has %i", clusters[0].indices.size () , " points." );
 
     pcl::PointCloud <pcl::PointXYZRGB>::Ptr colored_cloud = reg.getColoredCloud();
 
+    // Step 1: Calculate centroids
+    pcl::PointCloud<pcl::PointXYZI>::Ptr centroids(new pcl::PointCloud<pcl::PointXYZI>);
+    visualization_msgs::msg::MarkerArray marker_array;
+    int i=0;
 
-    return colored_cloud;
+    if(clusters.size () == 0 )
+    {
+        pcl::PointCloud <pcl::PointXYZRGB>::Ptr empty(new pcl::PointCloud <pcl::PointXYZRGB>());
+        return empty;
+
+    }
+
+
+    for (const auto& cluster : clusters) {
+        Eigen::Vector3f centroid(0.0, 0.0, 0.0);
+        for (auto idx : cluster.indices) {
+            centroid += pc_in->points[idx].getVector3fMap();
+        }
+        centroid /= static_cast<float>(cluster.indices.size());
+        centroids->push_back(pcl::PointXYZI(centroid.x(), centroid.y(), centroid.z()));
+
+        // Create centroid marker
+        visualization_msgs::msg::Marker marker;
+        marker.header.frame_id = lidar_frame_;  // Use the correct frame
+        marker.header.stamp = this->get_clock()->now();
+        marker.ns = "centroids";
+        marker.id = i;
+        marker.type = visualization_msgs::msg::Marker::SPHERE;
+        marker.action = visualization_msgs::msg::Marker::ADD;
+        marker.pose.position.x = centroid.x();
+        marker.pose.position.y = centroid.y();
+        marker.pose.position.z = centroid.z();
+        marker.scale.x = 1.0;
+        marker.scale.y = 1.0;
+        marker.scale.z = 1.0;
+        marker.color.a = 1.0;
+        marker.color.r = 1.0;
+        marker.color.g = 0.0;
+        marker.color.b = 0.0;
+        marker.lifetime = rclcpp::Duration(100ms);
+
+        marker_array.markers.push_back(marker);
+        i+=1;
+
+
+    }
+    centroid_marker_pub_->publish(marker_array);
+    pcl::KdTreeFLANN<pcl::PointXYZI> kdtree;
+    kdtree.setInputCloud(centroids);
+
+    std::vector<int> merged(clusters.size(), -1);  // Cluster merging labels
+    float merge_distance = 1.0;  // 1-meter threshold
+
+    // Step 3: Merge clusters based on Kd-tree neighbor search ( yum yum yum )
+    for (size_t i = 0; i < centroids->size(); ++i) {
+        if (merged[i] != -1) continue;  // Already merged
+        merged[i] = i;
+
+        std::vector<int> nearby_indices;
+        std::vector<float> distances;
+        kdtree.radiusSearch(centroids->points[i], merge_distance, nearby_indices, distances);
+
+        for (auto idx : nearby_indices) {
+            if (merged[idx] == -1) merged[idx] = i;
+        }
+    }
+
+    // // Step 4: Create merged cloud
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr merged_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
+
+    for (size_t i = 0; i < clusters.size(); ++i) {
+        int cluster_id = merged[i];
+        uint8_t r = (cluster_id * 193) % 256;
+        uint8_t g = (cluster_id * 97) % 256;
+        uint8_t b = (cluster_id * 53) % 256;
+
+        for (auto idx : clusters[i].indices) {
+            pcl::PointXYZRGB point;
+            point.x = pc_in->points[idx].x;
+            point.y = pc_in->points[idx].y;
+            point.z = pc_in->points[idx].z;
+            point.r = r;
+            point.g = g;
+            point.b = b;
+            merged_cloud->points.push_back(point);
+        }
+    }
+
+    RCLCPP_INFO(this->get_logger(), "Merged cloud has %lu points", merged_cloud->size());
+    merged_cloud->width = merged_cloud->size();
+    merged_cloud->height = 1;
+    merged_cloud->is_dense = true;
+
+    return merged_cloud;
 }
 
 
