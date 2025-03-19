@@ -411,10 +411,10 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr LivoxToPointCloud2::segment_side(pcl::Poi
     pcl::removeNaNFromPointCloud(*pc_in, *indices);
 
     pcl::RegionGrowing<pcl::PointXYZI, pcl::Normal> reg;
-    reg.setMinClusterSize (200);
+    reg.setMinClusterSize (100);
     reg.setMaxClusterSize (1000000);
     reg.setSearchMethod (tree);
-    reg.setNumberOfNeighbours (100);
+    reg.setNumberOfNeighbours (50);
     reg.setInputCloud (pc_in);
     reg.setIndices (indices);
     reg.setInputNormals (normals);
@@ -436,7 +436,7 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr LivoxToPointCloud2::segment_side(pcl::Poi
         return empty;
 
     }
-
+    
 
     for (const auto& cluster : clusters) {
         Eigen::Vector3f centroid(0.0, 0.0, 0.0);
@@ -471,6 +471,11 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr LivoxToPointCloud2::segment_side(pcl::Poi
 
 
     }
+
+
+
+
+
     centroid_marker_pub_->publish(marker_array);
     pcl::KdTreeFLANN<pcl::PointXYZI> kdtree;
     kdtree.setInputCloud(centroids);
@@ -491,6 +496,60 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr LivoxToPointCloud2::segment_side(pcl::Poi
             if (merged[idx] == -1) merged[idx] = i;
         }
     }
+
+    // garder le plus proche
+    // int K = 1;
+    // std::vector<int> pointIdxKNNSearch(K);
+    // std::vector<float> pointKNNSquaredDistance(K);
+    
+    // pcl::PointXYZI searchPoint;
+
+    // searchPoint.x = 0.0;
+    // searchPoint.y = 0.0;
+    // searchPoint.z = 0.0;
+    
+    // if ( kdtree.nearestKSearch (searchPoint, K, pointIdxKNNSearch, pointKNNSquaredDistance) > 0 )
+    //   {
+    //    for (std::size_t i = 0; i < pointIdxKNNSearch.size (); ++i)
+    //      std::cout << "    "  <<   (*centroids)[ pointIdxKNNSearch[i] ].x 
+    //                << " " << (*centroids)[ pointIdxKNNSearch[i] ].y 
+    //                << " " << (*centroids)[ pointIdxKNNSearch[i] ].z 
+    //                << " (squared distance: " << pointKNNSquaredDistance[i] << ")" << std::endl;
+    //  }
+
+
+    //  marker_array.markers.clear();
+
+
+    //  visualization_msgs::msg::Marker marker;
+    //  marker.header.frame_id = lidar_frame_;  // Use the correct frame
+    //  marker.header.stamp = this->get_clock()->now();
+    //  marker.ns = "centroids";
+    //  marker.id = i;
+    //  marker.type = visualization_msgs::msg::Marker::SPHERE;
+    //  marker.action = visualization_msgs::msg::Marker::ADD;
+    //  marker.pose.position.x = (*centroids)[ pointIdxKNNSearch[i] ].x ;
+    //  marker.pose.position.y = (*centroids)[ pointIdxKNNSearch[i] ].y 
+    //  marker.pose.position.z = (*centroids)[ pointIdxKNNSearch[i] ].z 
+    //  marker.scale.x = 1.0;
+    //  marker.scale.y = 1.0;
+    //  marker.scale.z = 1.0;
+    //  marker.color.a = 1.0;
+    //  marker.color.r = 1.0;
+    //  marker.color.g = 0.0;
+    //  marker.color.b = 0.0;
+    //  marker.lifetime = rclcpp::Duration(100ms);
+
+
+
+    //  marker_array.markers.push_back(marker);
+
+
+    
+
+
+
+
 
     // // Step 4: Create merged cloud
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr merged_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);

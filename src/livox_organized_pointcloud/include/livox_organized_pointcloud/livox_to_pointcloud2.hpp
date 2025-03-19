@@ -48,6 +48,7 @@
 // visusalization 
 #include <visualization_msgs/msg/marker_array.hpp>
 #include <geometry_msgs/msg/point.hpp>
+using namespace std;
 
 namespace pcl
 {
