@@ -35,6 +35,10 @@
 
 using namespace std::chrono_literals;
 
+auto compareVectors = [](const Eigen::Vector3f& a, const Eigen::Vector3f& b) {
+    return a.norm() < b.norm();
+};
+
 LivoxToPointCloud2::LivoxToPointCloud2() : Node("livox_to_pointcloud2")
 {
     // LIDAR PARAMS
@@ -411,15 +415,15 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr LivoxToPointCloud2::segment_side(pcl::Poi
     pcl::removeNaNFromPointCloud(*pc_in, *indices);
 
     pcl::RegionGrowing<pcl::PointXYZI, pcl::Normal> reg;
-    reg.setMinClusterSize (100);
+    reg.setMinClusterSize (300);  // 100 not bad 
     reg.setMaxClusterSize (1000000);
     reg.setSearchMethod (tree);
-    reg.setNumberOfNeighbours (50);
+    reg.setNumberOfNeighbours (500);  // 30 not bad for neighbours ( plus de surface à prendre)
     reg.setInputCloud (pc_in);
     reg.setIndices (indices);
     reg.setInputNormals (normals);
     reg.setSmoothnessThreshold (side_segementation_smoothnessThreshold_ / 180.0 * M_PI);
-    reg.setCurvatureThreshold (3.0);
+    reg.setCurvatureThreshold (3.0); // 1.0 c'est un peu low comme Curvature donc plus de surface generée par l'algo
     std::vector <pcl::PointIndices> clusters;
     reg.extract (clusters);
 
@@ -437,38 +441,23 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr LivoxToPointCloud2::segment_side(pcl::Poi
 
     }
     
+    std::map<Eigen::Vector3f,pcl::PointXYZI , decltype(compareVectors) > map_centroid_cluster(compareVectors); // calculer le centroid et map le centroid a son cluster 
 
     for (const auto& cluster : clusters) {
         Eigen::Vector3f centroid(0.0, 0.0, 0.0);
+        float distance_min = 100.0 ; // 100 m distance min 
+        pcl::PointXYZI min_point;
         for (auto idx : cluster.indices) {
             centroid += pc_in->points[idx].getVector3fMap();
+            if(sqrt(pc_in->points[idx].getVector3fMap().x()*pc_in->points[idx].getVector3fMap().x() + pc_in->points[idx].getVector3fMap().y()*pc_in->points[idx].getVector3fMap().y()) < distance_min)
+            {
+                distance_min = sqrt(pc_in->points[idx].getVector3fMap().x()*pc_in->points[idx].getVector3fMap().x() + pc_in->points[idx].getVector3fMap().y()*pc_in->points[idx].getVector3fMap().y());
+                min_point = pc_in->points[idx];
+            }
         }
         centroid /= static_cast<float>(cluster.indices.size());
         centroids->push_back(pcl::PointXYZI(centroid.x(), centroid.y(), centroid.z()));
-
-        // Create centroid marker
-        visualization_msgs::msg::Marker marker;
-        marker.header.frame_id = lidar_frame_;  // Use the correct frame
-        marker.header.stamp = this->get_clock()->now();
-        marker.ns = "centroids";
-        marker.id = i;
-        marker.type = visualization_msgs::msg::Marker::SPHERE;
-        marker.action = visualization_msgs::msg::Marker::ADD;
-        marker.pose.position.x = centroid.x();
-        marker.pose.position.y = centroid.y();
-        marker.pose.position.z = centroid.z();
-        marker.scale.x = 1.0;
-        marker.scale.y = 1.0;
-        marker.scale.z = 1.0;
-        marker.color.a = 1.0;
-        marker.color.r = 1.0;
-        marker.color.g = 0.0;
-        marker.color.b = 0.0;
-        marker.lifetime = rclcpp::Duration(100ms);
-
-        marker_array.markers.push_back(marker);
-        i+=1;
-
+        map_centroid_cluster[centroid]= min_point;
 
     }
 
@@ -476,7 +465,7 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr LivoxToPointCloud2::segment_side(pcl::Poi
 
 
 
-    centroid_marker_pub_->publish(marker_array);
+    //centroid_marker_pub_->publish(marker_array);
     pcl::KdTreeFLANN<pcl::PointXYZI> kdtree;
     kdtree.setInputCloud(centroids);
 
@@ -497,54 +486,69 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr LivoxToPointCloud2::segment_side(pcl::Poi
         }
     }
 
-    // garder le plus proche
-    // int K = 1;
-    // std::vector<int> pointIdxKNNSearch(K);
-    // std::vector<float> pointKNNSquaredDistance(K);
+    // Garder le plus proche
+    int K = 3;
+    std::vector<int> pointIdxKNNSearch(K);
+    std::vector<float> pointKNNSquaredDistance(K);
     
-    // pcl::PointXYZI searchPoint;
+    pcl::PointXYZI searchPoint;
 
-    // searchPoint.x = 0.0;
-    // searchPoint.y = 0.0;
-    // searchPoint.z = 0.0;
+    searchPoint.x = 0.0;
+    searchPoint.y = 0.0;
+    searchPoint.z = 0.0;
+
+    Eigen::Vector3f selected_centroid(0.0, 0.0, 0.0);
+    float distance_min = 100.0;
     
-    // if ( kdtree.nearestKSearch (searchPoint, K, pointIdxKNNSearch, pointKNNSquaredDistance) > 0 )
-    //   {
-    //    for (std::size_t i = 0; i < pointIdxKNNSearch.size (); ++i)
-    //      std::cout << "    "  <<   (*centroids)[ pointIdxKNNSearch[i] ].x 
-    //                << " " << (*centroids)[ pointIdxKNNSearch[i] ].y 
-    //                << " " << (*centroids)[ pointIdxKNNSearch[i] ].z 
-    //                << " (squared distance: " << pointKNNSquaredDistance[i] << ")" << std::endl;
-    //  }
+    if ( kdtree.nearestKSearch (searchPoint, K, pointIdxKNNSearch, pointKNNSquaredDistance) > 0 )
+      {
+       for (std::size_t i = 0; i < pointIdxKNNSearch.size (); ++i)
+       {
+        float distance_temp = sqrt((*centroids)[ pointIdxKNNSearch[i] ].y * (*centroids)[ pointIdxKNNSearch[i] ].y + (*centroids)[ pointIdxKNNSearch[i] ].z * (*centroids)[ pointIdxKNNSearch[i] ].z);
+        if(distance_temp < distance_min )
+        {
+            distance_min = distance_temp;
+            selected_centroid.x() = (*centroids)[ pointIdxKNNSearch[i] ].x ;
+            selected_centroid.y() = (*centroids)[ pointIdxKNNSearch[i] ].y ;
+            selected_centroid.z() = (*centroids)[ pointIdxKNNSearch[i] ].z ;
+        }
+        std::cout << "    "  <<   (*centroids)[ pointIdxKNNSearch[i] ].x 
+        << " " << (*centroids)[ pointIdxKNNSearch[i] ].y 
+        << " " << (*centroids)[ pointIdxKNNSearch[i] ].z 
+        << " (squared distance: " << pointKNNSquaredDistance[i] << ")" << std::endl;
+       }
+
+     }
 
 
-    //  marker_array.markers.clear();
+    pcl::PointXYZI point_near_robot;
+
+    point_near_robot = map_centroid_cluster[selected_centroid];
 
 
-    //  visualization_msgs::msg::Marker marker;
-    //  marker.header.frame_id = lidar_frame_;  // Use the correct frame
-    //  marker.header.stamp = this->get_clock()->now();
-    //  marker.ns = "centroids";
-    //  marker.id = i;
-    //  marker.type = visualization_msgs::msg::Marker::SPHERE;
-    //  marker.action = visualization_msgs::msg::Marker::ADD;
-    //  marker.pose.position.x = (*centroids)[ pointIdxKNNSearch[i] ].x ;
-    //  marker.pose.position.y = (*centroids)[ pointIdxKNNSearch[i] ].y 
-    //  marker.pose.position.z = (*centroids)[ pointIdxKNNSearch[i] ].z 
-    //  marker.scale.x = 1.0;
-    //  marker.scale.y = 1.0;
-    //  marker.scale.z = 1.0;
-    //  marker.color.a = 1.0;
-    //  marker.color.r = 1.0;
-    //  marker.color.g = 0.0;
-    //  marker.color.b = 0.0;
-    //  marker.lifetime = rclcpp::Duration(100ms);
+     marker_array.markers.clear();
+     visualization_msgs::msg::Marker marker;
+     marker.header.frame_id = lidar_frame_;  // Use the correct frame
+     marker.header.stamp = this->get_clock()->now();
+     marker.ns = "centroids";
+     marker.id = i;
+     marker.type = visualization_msgs::msg::Marker::SPHERE;
+     marker.action = visualization_msgs::msg::Marker::ADD;
+     marker.pose.position.x = selected_centroid.x()  ; 
+     marker.pose.position.y = point_near_robot.y ; 
+     marker.pose.position.z = selected_centroid.z() ;
+     marker.scale.x = 1.0;
+     marker.scale.y = 1.0;
+     marker.scale.z = 1.0;
+     marker.color.a = 1.0;
+     marker.color.r = 1.0;
+     marker.color.g = 0.0;
+     marker.color.b = 0.0;
+     marker.lifetime = rclcpp::Duration(100ms);
 
+     marker_array.markers.push_back(marker);
 
-
-    //  marker_array.markers.push_back(marker);
-
-
+     centroid_marker_pub_->publish(marker_array);
     
 
 

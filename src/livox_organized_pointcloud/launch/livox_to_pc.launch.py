@@ -36,7 +36,7 @@ def generate_launch_description():
             executable='livox_organized_pointcloud_node',
             name='livox_organized_pointcloud_node',
             output='screen',
-            # prefix = ["gdbserver localhost:3000"],
+            prefix = ["gdbserver localhost:3000"],
             parameters=[{
                 'lidar_topic_input': LaunchConfiguration('lidar_topic_input'),
                 'lidar_topic_output': LaunchConfiguration('lidar_topic_output'),

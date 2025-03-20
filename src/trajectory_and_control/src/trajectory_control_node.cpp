@@ -28,8 +28,8 @@ class CentroidTracker : public rclcpp::Node {
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_pub_;
     const double safe_distance_ = 1.5;
     const double avoidance_offset_ = 0.5;  // Lateral offset for avoidance
-    const double max_linear_speed_ = 0.5;
-    const double max_angular_speed_ = 0.5;
+    const double max_linear_speed_ = 1.0;
+    const double max_angular_speed_ = 1.5;
 
 
     nav_msgs::msg::Path path_;
@@ -84,7 +84,7 @@ class CentroidTracker : public rclcpp::Node {
         marker_array.markers.push_back(marker_goal);
         id+=1;
 
-        //RCLCPP_INFO(this->get_logger(), " position x = %f y = %f z = %f ",marker.pose.position.x,marker.pose.position.y,marker.pose.position.z);
+        RCLCPP_INFO(this->get_logger(), " position x = %f y = %f z = %f ",marker.pose.position.x,marker.pose.position.y,marker.pose.position.z);
       }
       publisher_goal_to_reach_->publish(marker_array);
       followProjectedTrajectory();
