@@ -50,6 +50,15 @@
 #include <geometry_msgs/msg/point.hpp>
 using namespace std;
 
+// transform 
+#include <pcl/common/transforms.h>
+
+// math for pi 
+#include <math.h>
+
+// omp 
+#include "omp.h"
+
 namespace pcl
 {
 struct EIGEN_ALIGN16 PointXYZIR
@@ -80,7 +89,7 @@ private:
     void callback_pc(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
     void upsampling(pcl::PointCloud<pcl::PointXYZI>::Ptr& input_cloud,
         pcl::PointCloud<pcl::PointXYZI>::Ptr& output_cloud);
-    
+    void Transform_pointcloud(pcl::PointCloud<pcl::PointXYZI>::Ptr pc_in, double Angle);
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr centroid_marker_pub_;
     rclcpp::Subscription<livox_ros_driver2::msg::CustomMsg>::SharedPtr subscription_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr subscription_pc;
@@ -105,6 +114,7 @@ private:
     float y_side_filter;
     float x_side_min_filter;
     float x_side_max_filter;
+    double theta_angle_degree_;
 };
 
 #endif  // LIVOX_TO_POINTCLOUD2_HPP

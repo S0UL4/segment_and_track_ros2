@@ -18,7 +18,7 @@ class CentroidTracker : public rclcpp::Node {
         marker_sub_ = this->create_subscription<visualization_msgs::msg::MarkerArray>(
             "centroid_markers", 10, std::bind(&CentroidTracker::marker_callback, this, std::placeholders::_1));    
         publisher_goal_to_reach_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("goals",10);
-        cmd_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
+        cmd_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/rmp440le/base/vel_cmd_auto", 10);
 
     }
     private:
@@ -28,8 +28,8 @@ class CentroidTracker : public rclcpp::Node {
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_pub_;
     const double safe_distance_ = 1.5;
     const double avoidance_offset_ = 0.5;  // Lateral offset for avoidance
-    const double max_linear_speed_ = 1.0;
-    const double max_angular_speed_ = 1.5;
+    const double max_linear_speed_ = 0.5;
+    const double max_angular_speed_ = 1.0;
 
 
     nav_msgs::msg::Path path_;

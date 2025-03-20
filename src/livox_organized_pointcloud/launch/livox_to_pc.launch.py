@@ -17,6 +17,7 @@ def generate_launch_description():
         DeclareLaunchArgument('lidar_topic_input', default_value='/velodyne_points', description='Lidar input topic'),
         DeclareLaunchArgument('lidar_topic_output', default_value='/livox/lidar_organized', description='Lidar output topic'),
         DeclareLaunchArgument('lidar_frame', default_value='velodyne', description='Lidar frame'),
+        DeclareLaunchArgument('theta_angle_degree', default_value='90.0', description='Rotation pointcloud % Z '),
         DeclareLaunchArgument('keep_side', default_value='left', description='Side to keep in lidar processing'),
         DeclareLaunchArgument('radius_filetring_compared_to_livox', default_value='0.5', description='Radius from lidar origin (float)'),
         DeclareLaunchArgument('k_neighboors_normal_estimation', default_value='1.5', description='K-neighbors for normal estimation (float)'),
@@ -36,7 +37,7 @@ def generate_launch_description():
             executable='livox_organized_pointcloud_node',
             name='livox_organized_pointcloud_node',
             output='screen',
-            prefix = ["gdbserver localhost:3000"],
+            # prefix = ["gdbserver localhost:3000"],
             parameters=[{
                 'lidar_topic_input': LaunchConfiguration('lidar_topic_input'),
                 'lidar_topic_output': LaunchConfiguration('lidar_topic_output'),
@@ -53,7 +54,8 @@ def generate_launch_description():
                 'lidar_selected': LaunchConfiguration('lidar_selected'),
                 'y_side_filter': LaunchConfiguration('y_side_filter'),
                 'x_side_min_filter' : LaunchConfiguration('x_side_min_filter'),
-                'x_side_max_filter' : LaunchConfiguration('x_side_max_filter')
+                'x_side_max_filter' : LaunchConfiguration('x_side_max_filter'),
+                'theta_angle_degree' : LaunchConfiguration('theta_angle_degree')
             }]
         )
     ])

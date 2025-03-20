@@ -45,6 +45,8 @@ LivoxToPointCloud2::LivoxToPointCloud2() : Node("livox_to_pointcloud2")
     this->declare_parameter<std::string>("lidar_topic_input", "/livox/lidar"); // defaults to "/livox/lidar"
     this->declare_parameter<std::string>("lidar_topic_output", "/livox/lidar_organized"); // defaults to "/livox/lidar"
     this->declare_parameter<std::string>("lidar_frame", "livox_lidar_frame"); // defaults to "/livox/lidar"
+    this->declare_parameter<double>("theta_angle_degree", 90.0); // defaults to "/livox/lidar"
+
     // Which side of livox ?
     this->declare_parameter<std::string>("keep_side", "all"); // defaults to "all"
 
@@ -77,6 +79,7 @@ LivoxToPointCloud2::LivoxToPointCloud2() : Node("livox_to_pointcloud2")
 
     this->get_parameter("lidar_topic_input", lidar_topic_input_);
     this->get_parameter("lidar_topic_output", lidar_topic_output_);
+    this->get_parameter("theta_angle_degree",theta_angle_degree_);
     this->get_parameter("lidar_frame", lidar_frame_);
     this->get_parameter("radius_filetring_compared_to_livox", radius_);  // Default radius = 1m
     this->get_parameter("keep_side", side_);
@@ -173,6 +176,27 @@ void LivoxToPointCloud2::upsampling(pcl::PointCloud<pcl::PointXYZI>::Ptr& input_
 }
 
 
+void LivoxToPointCloud2::Transform_pointcloud(pcl::PointCloud<pcl::PointXYZI>::Ptr pc_in, double theta)
+{
+
+      /* Reminder: how transformation matrices work :
+    
+               |-------> This column is the translation
+        | 1 0 0 x |  \
+        | 0 1 0 y |   }-> The identity 3x3 matrix (no rotation) on the left
+        | 0 0 1 z |  /
+        | 0 0 0 1 |    -> We do not use this line (and it has to stay 0,0,0,1)
+    
+      */
+    Eigen::Affine3f transform = Eigen::Affine3f::Identity();
+    // Define a rotation matrix (see https://en.wikipedia.org/wiki/Rotation_matrix)
+    //float theta = M_PI/4; // The angle of rotation in radians
+    //transform_2.translation() << 2.5, 0.0, 0.0; // x y z 
+    transform.rotate (Eigen::AngleAxisf (theta*M_PI/180, Eigen::Vector3f::UnitZ()));
+    pcl::transformPointCloud (*pc_in, *pc_in, transform);
+}
+
+
 void LivoxToPointCloud2::callback_pc(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
     if(msg->data.size() == 0) return;
@@ -182,6 +206,8 @@ void LivoxToPointCloud2::callback_pc(const sensor_msgs::msg::PointCloud2::Shared
 
     sensor_msgs::msg::PointCloud2 output_filtered; 
     pcl::fromROSMsg(*msg, *pcl_cloud);
+
+    //Transform_pointcloud(pcl_cloud,theta_angle_degree_);
     // filter on Y
     pcl::PassThrough<pcl::PointXYZI> pass_y;
     pcl::PassThrough<pcl::PointXYZI> pass_x;
@@ -237,10 +263,10 @@ void LivoxToPointCloud2::callback_pc(const sensor_msgs::msg::PointCloud2::Shared
     }
 
     // upsampling maybe ??? 
-    pcl::PointCloud<pcl::PointXYZI>::Ptr up_sample_filtered(new pcl::PointCloud<pcl::PointXYZI>());
+    //pcl::PointCloud<pcl::PointXYZI>::Ptr up_sample_filtered(new pcl::PointCloud<pcl::PointXYZI>());
 
-    upsampling(cloud_filtered_final,up_sample_filtered);
-    pcl::toROSMsg(*up_sample_filtered,output_filtered);
+    //upsampling(cloud_filtered_final,up_sample_filtered);
+    pcl::toROSMsg(*cloud_filtered_final,output_filtered);
     output_filtered.header = msg->header;
     output_filtered.header.frame_id = lidar_frame_;
     output_filtered.is_dense = true;
@@ -415,10 +441,10 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr LivoxToPointCloud2::segment_side(pcl::Poi
     pcl::removeNaNFromPointCloud(*pc_in, *indices);
 
     pcl::RegionGrowing<pcl::PointXYZI, pcl::Normal> reg;
-    reg.setMinClusterSize (300);  // 100 not bad 
+    reg.setMinClusterSize (200);  // 100 not bad 
     reg.setMaxClusterSize (1000000);
     reg.setSearchMethod (tree);
-    reg.setNumberOfNeighbours (500);  // 30 not bad for neighbours ( plus de surface à prendre)
+    reg.setNumberOfNeighbours (50);  // 30 not bad for neighbours ( plus de surface à prendre)
     reg.setInputCloud (pc_in);
     reg.setIndices (indices);
     reg.setInputNormals (normals);
@@ -442,7 +468,7 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr LivoxToPointCloud2::segment_side(pcl::Poi
     }
     
     std::map<Eigen::Vector3f,pcl::PointXYZI , decltype(compareVectors) > map_centroid_cluster(compareVectors); // calculer le centroid et map le centroid a son cluster 
-
+    static bool start=true;
     for (const auto& cluster : clusters) {
         Eigen::Vector3f centroid(0.0, 0.0, 0.0);
         float distance_min = 100.0 ; // 100 m distance min 
@@ -453,6 +479,7 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr LivoxToPointCloud2::segment_side(pcl::Poi
             {
                 distance_min = sqrt(pc_in->points[idx].getVector3fMap().x()*pc_in->points[idx].getVector3fMap().x() + pc_in->points[idx].getVector3fMap().y()*pc_in->points[idx].getVector3fMap().y());
                 min_point = pc_in->points[idx];
+                //start = false;
             }
         }
         centroid /= static_cast<float>(cluster.indices.size());
@@ -535,7 +562,7 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr LivoxToPointCloud2::segment_side(pcl::Poi
      marker.type = visualization_msgs::msg::Marker::SPHERE;
      marker.action = visualization_msgs::msg::Marker::ADD;
      marker.pose.position.x = selected_centroid.x()  ; 
-     marker.pose.position.y = point_near_robot.y ; 
+     marker.pose.position.y = point_near_robot.y ; //selected_centroid.y();
      marker.pose.position.z = selected_centroid.z() ;
      marker.scale.x = 1.0;
      marker.scale.y = 1.0;
