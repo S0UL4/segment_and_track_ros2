@@ -27,9 +27,12 @@ def generate_launch_description():
         DeclareLaunchArgument('ground_filter_angle_threshold', default_value='10.0', description='Ground filter angle threshold (float)'),
         DeclareLaunchArgument('ground_filter_inverse_z', default_value='false', description='Ground filter inverse Z (bool)'),
         DeclareLaunchArgument('side_segementation_smoothnessThreshold', default_value='90.0', description='If the deviation between points normals is less than the smoothness threshold then they are suggested to be in the same cluster ( !! en degrees )( float )'),
-        DeclareLaunchArgument('y_side_filter', default_value='10.0', description='Y filter max distance (m)'),
-        DeclareLaunchArgument('x_side_min_filter', default_value='2.0', description='pointcloud at X min distance towards lidar to take into account '),
-        DeclareLaunchArgument('x_side_max_filter', default_value='30.0', description='pointcloud up to X max m to take into account '),
+        DeclareLaunchArgument('y_side_filter', default_value='20.0', description='Y filter max distance (m)'),
+        DeclareLaunchArgument('x_side_min_filter', default_value='0.0', description='pointcloud at X min distance towards lidar to take into account '),
+        DeclareLaunchArgument('x_side_max_filter', default_value='7.0', description='pointcloud up to X max m to take into account '),
+        DeclareLaunchArgument('downsample_voxel_leaf_size', default_value='0.2', description='downsample before segmenting for faster computing ( in meter ) '),
+        DeclareLaunchArgument('setMinClusterSize', default_value='200', description='setMinClusterSize for segmentation side '),
+        DeclareLaunchArgument('setNumberOfNeighbours', default_value='30', description='setNumberOfNeighbours for segmentation side'),
 
         # Node execution (example, modify for your use case)
         Node(
@@ -55,8 +58,21 @@ def generate_launch_description():
                 'y_side_filter': LaunchConfiguration('y_side_filter'),
                 'x_side_min_filter' : LaunchConfiguration('x_side_min_filter'),
                 'x_side_max_filter' : LaunchConfiguration('x_side_max_filter'),
-                'theta_angle_degree' : LaunchConfiguration('theta_angle_degree')
+                'theta_angle_degree' : LaunchConfiguration('theta_angle_degree'),
+                'downsample_voxel_leaf_size' : LaunchConfiguration('downsample_voxel_leaf_size'),
+                'setMinClusterSize' : LaunchConfiguration('setMinClusterSize'),
+                'setNumberOfNeighbours' : LaunchConfiguration('setNumberOfNeighbours')
             }]
+        ),
+        Node(
+            package='rviz_2d_overlay_plugins',
+            executable='string_to_overlay_text',
+            name='string_to_overlay_text_1',
+            output='screen',
+            parameters=[
+                {"string_topic": "lisiere_detected"},
+                {"fg_color": "b"}, # colors can be: r,g,b,w,k,p,y (red,green,blue,white,black,pink,yellow)
+            ],
         )
     ])
 

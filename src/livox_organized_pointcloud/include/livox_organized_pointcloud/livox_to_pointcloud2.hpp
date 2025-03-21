@@ -5,6 +5,7 @@
 #include "sensor_msgs/msg/point_cloud2.hpp"
 #include "livox_ros_driver2/msg/custom_msg.hpp"
 #include "std_msgs/msg/header.hpp"
+#include "std_msgs/msg/string.hpp"
 #include "sensor_msgs/msg/point_field.hpp"
 #include <pcl/common/centroid.h>
 #include <pcl/range_image/range_image.h>
@@ -59,6 +60,9 @@ using namespace std;
 // omp 
 #include "omp.h"
 
+// downsample using voxelgrid
+#include <pcl/filters/voxel_grid.h>
+
 namespace pcl
 {
 struct EIGEN_ALIGN16 PointXYZIR
@@ -90,12 +94,14 @@ private:
     void upsampling(pcl::PointCloud<pcl::PointXYZI>::Ptr& input_cloud,
         pcl::PointCloud<pcl::PointXYZI>::Ptr& output_cloud);
     void Transform_pointcloud(pcl::PointCloud<pcl::PointXYZI>::Ptr pc_in, double Angle);
+    void downsample(pcl::PointCloud<pcl::PointXYZI>::Ptr& input_cloud);
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr centroid_marker_pub_;
     rclcpp::Subscription<livox_ros_driver2::msg::CustomMsg>::SharedPtr subscription_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr subscription_pc;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr publisher_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr publisher_colored;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr inliers_publisher_;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr lisiere_detected_publisher_;
     pcl::PointCloud<pcl::PointXYZI>::Ptr extractPlanes(pcl::PointCloud<pcl::PointXYZI>::Ptr pc, pcl::PointIndices::Ptr inliers, pcl::ModelCoefficients::Ptr coefficients, float distanceThreshold, float angle, int maxIterations);
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr segment_side(pcl::PointCloud<pcl::PointXYZI>::Ptr pc_in, float k_neighboors);
     std::string lidar_topic_input_;
@@ -115,6 +121,14 @@ private:
     float x_side_min_filter;
     float x_side_max_filter;
     double theta_angle_degree_;
+    float downsample_voxel_leaf_size_;
+    int setMinClusterSize_;
+    int setNumberOfNeighbours_;
 };
 
 #endif  // LIVOX_TO_POINTCLOUD2_HPP
+
+// reg.setMinClusterSize (300);  // 100 not bad 
+// reg.setMaxClusterSize (1000000);
+// reg.setSearchMethod (tree);
+// reg.setNumberOfNeighbours (200); 
